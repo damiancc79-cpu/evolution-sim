@@ -19,13 +19,13 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = incoming.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "EVOLV — Natural Selection in Motion";
-  const description = "A living, interactive evolution simulation where organisms forage, reproduce, mutate, and adapt.";
+  const description = "A living evolution simulation where organisms seek food and water, reproduce, mutate, and adapt.";
   return {
     title,
     description,
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
-    openGraph: { title, description, type: "website", images: [{ url: `${origin}/og.png`, width: 1733, height: 907, alt: "EVOLV — a living evolution simulation" }] },
-    twitter: { card: "summary_large_image", title, description, images: [`${origin}/og.png`] },
+    openGraph: { title, description, type: "website", images: [{ url: `${origin}/og-water.png`, width: 1733, height: 907, alt: "EVOLV organisms seeking food and water" }] },
+    twitter: { card: "summary_large_image", title, description, images: [`${origin}/og-water.png`] },
   };
 }
 
