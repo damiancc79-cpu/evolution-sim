@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = incoming.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "EVOLV — Natural Selection in Motion";
-  const description = "A living evolution simulation where organisms seek seasonal fruit and water, reproduce, mutate, and adapt.";
+  const description = "A living evolution simulation where gooblets forage, drink, rest, reproduce, mutate, and adapt.";
   return {
     title,
     description,

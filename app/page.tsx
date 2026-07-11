@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Genome = { speed: number; size: number; sense: number; hue: number; efficiency: number };
-type Creature = Genome & { x: number; y: number; vx: number; vy: number; energy: number; hunger: number; water: number; eating: boolean; drinking: boolean; age: number; generation: number; target?: number };
+type Creature = Genome & { x: number; y: number; vx: number; vy: number; energy: number; hunger: number; water: number; eating: boolean; drinking: boolean; resting: boolean; restTimer: number; age: number; generation: number; target?: number };
 type Food = { x: number; y: number; energy: number };
 type Bush = { x: number; y: number; radius: number; fruit: number; maxFruit: number };
 type Sample = { population: number; food: number; water: number; speed: number };
@@ -23,7 +23,7 @@ function seedCreature(width: number, height: number, generation = 1, parent?: Ge
   return {
     x: rand(24, Math.max(25, width - 24)),
     y: rand(24, Math.max(25, height - 24)),
-    vx: rand(-1, 1), vy: rand(-1, 1), energy: 90, hunger: rand(68, 100), water: rand(68, 100), eating: false, drinking: false, age: 0, generation,
+    vx: rand(-1, 1), vy: rand(-1, 1), energy: 105, hunger: rand(76, 100), water: rand(76, 100), eating: false, drinking: false, resting: false, restTimer: rand(120, 420), age: 0, generation,
     speed: parent ? mutate(parent.speed, 0.22, 0.45, 2.7) : rand(0.8, 1.45),
     size: parent ? mutate(parent.size, 0.7, 3.2, 9.5) : rand(4.5, 7.2),
     sense: parent ? mutate(parent.sense, 12, 34, 150) : rand(55, 95),
@@ -48,7 +48,7 @@ export default function Home() {
   const speedRef = useRef(1);
   const [mutation, setMutation] = useState(18);
   const mutationRef = useRef(18);
-  const [stats, setStats] = useState({ population: 28, food: 78, hunger: 84, water: 88, hydration: 84, generation: 1, avgSpeed: 0, avgSize: 0, year: 1, season: "Spring", event: "A calm season" });
+  const [stats, setStats] = useState({ population: 28, food: 78, hunger: 88, water: 88, hydration: 88, resting: 0, generation: 1, avgSpeed: 0, avgSize: 0, year: 1, season: "Spring", event: "A calm season" });
 
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => { speedRef.current = speed; }, [speed]);
@@ -107,40 +107,45 @@ export default function Home() {
         if (s.eventTimer > 0) s.eventTimer -= dt;
         else if (Math.random() < 0.00075 * dt) {
           const eventRoll = Math.random();
-          if (eventRoll < .34) { s.event = "Drought — the pond is shrinking"; s.foodRate = .24; s.waterEffect = -.014; }
+          if (eventRoll < .34) { s.event = "Drought — the pond is shrinking"; s.foodRate = .4; s.waterEffect = -.008; }
           else if (eventRoll < .67) { s.event = "Rainfall — the pond is replenishing"; s.foodRate = 1.2; s.waterEffect = .04; }
           else { s.event = "Superbloom — food is abundant"; s.foodRate = 2.6; s.waterEffect = .006; }
           s.eventTimer = 420;
         } else { s.event = "A calm season"; s.foodRate = 1; s.waterEffect = 0; }
-        const seasonalRate = s.season === "Spring" ? .75 : s.season === "Summer" ? 1.65 : s.season === "Autumn" ? 1 : .08;
-        if (s.food.length < 60 && Math.random() < .012 * dt * s.foodRate * seasonalRate) s.food.push({ x: rand(8, s.width - 8), y: rand(8, s.height - 8), energy: rand(17, 28) });
-        const fruitGrowth = .0065 * seasonalRate * s.foodRate * dt;
+        const seasonalRate = s.season === "Spring" ? 1.05 : s.season === "Summer" ? 1.65 : s.season === "Autumn" ? 1.1 : .28;
+        if (s.food.length < 70 && Math.random() < .018 * dt * s.foodRate * seasonalRate) s.food.push({ x: rand(8, s.width - 8), y: rand(8, s.height - 8), energy: rand(20, 31) });
+        const fruitGrowth = .008 * seasonalRate * s.foodRate * dt;
         for (const bush of s.bushes) bush.fruit = Math.min(bush.maxFruit, bush.fruit + fruitGrowth);
-        const seasonalWater = s.season === "Spring" ? .003 : s.season === "Summer" ? -.005 : s.season === "Autumn" ? -.0015 : -.0005;
-        s.waterLevel = clamp(s.waterLevel + (seasonalWater + s.waterEffect) * dt, 8, 100);
+        const seasonalWater = s.season === "Spring" ? .004 : s.season === "Summer" ? -.003 : s.season === "Autumn" ? -.0008 : -.0002;
+        s.waterLevel = clamp(s.waterLevel + (seasonalWater + s.waterEffect) * dt, 18, 100);
         const pondX = s.width * .79, pondY = s.height * .73;
         const pondMax = Math.min(s.width, s.height) * .125;
         const pondRadius = pondMax * (.48 + s.waterLevel / 100 * .52);
 
         const newborns: Creature[] = [];
         for (const c of s.creatures) {
-          c.age += dt; c.drinking = false; c.eating = false;
-          c.energy -= (.026 + c.speed * .018 + c.size * .002 + c.sense * .000045) * dt / c.efficiency;
-          c.hunger = Math.max(0, c.hunger - (.04 + c.speed * .004 + c.size * .0013) * dt / c.efficiency);
-          c.water = Math.max(0, c.water - (.045 + c.speed * .004 + c.size * .0012) * dt / c.efficiency);
-          if (c.hunger <= 0) c.energy -= .17 * dt;
-          if (c.water <= 0) c.energy -= .18 * dt;
+          c.age += dt; c.drinking = false; c.eating = false; c.restTimer -= dt;
+          const comfortable = c.hunger > 73 && c.water > 73;
+          if (c.resting && (!comfortable || c.restTimer <= 0)) { c.resting=false; c.restTimer=rand(260,560); }
+          else if (!c.resting && comfortable && c.restTimer <= 0) { c.resting=true; c.restTimer=rand(160,380); }
+          const metabolicRate = c.resting ? .32 : 1;
+          c.energy -= (.009 + c.speed * .0045 + c.size * .0006 + c.sense * .000018) * dt * metabolicRate / c.efficiency;
+          c.hunger = Math.max(0, c.hunger - (.018 + c.speed * .002 + c.size * .0005) * dt * (c.resting?.42:1) / c.efficiency);
+          c.water = Math.max(0, c.water - (.02 + c.speed * .002 + c.size * .00055) * dt * (c.resting?.42:1) / c.efficiency);
+          if (c.hunger <= 0) c.energy -= .055 * dt;
+          if (c.water <= 0) c.energy -= .06 * dt;
           const urgentFoodRange = c.hunger < 62 ? Math.max(c.sense, 210) : c.sense;
           let closest = -1, fruitBush = -1, fruitSlot = -1, best = urgentFoodRange * urgentFoodRange;
           for (let j = 0; j < s.food.length; j++) { const f = s.food[j]; const d = (f.x-c.x)**2 + (f.y-c.y)**2; if (d < best) { best = d; closest = j; } }
           for (let bIndex=0;bIndex<s.bushes.length;bIndex++) { const bush=s.bushes[bIndex]; for(let slot=0;slot<Math.floor(bush.fruit);slot++){const fruit=fruitPosition(bush,slot);const d=(fruit.x-c.x)**2+(fruit.y-c.y)**2;if(d<best){best=d;closest=-1;fruitBush=bIndex;fruitSlot=slot;}} }
           const pondDistance = Math.hypot(pondX - c.x, pondY - c.y);
-          const thirsty = c.water < 58;
-          const hungry = c.hunger < 62;
+          const thirsty = c.water < 54;
+          const hungry = c.hunger < 58;
           const seekWater = thirsty && (c.water <= c.hunger || c.hunger > 34);
           const seekFood = hungry && !seekWater;
-          if (seekWater && pondDistance <= pondRadius * .88 && s.waterLevel > 1) {
-            c.drinking = true; c.water = Math.min(100, c.water + 2.2 * dt); s.waterLevel = Math.max(8, s.waterLevel - .0018 * dt); c.vx *= .72; c.vy *= .72;
+          if (c.resting) { c.vx*=.95; c.vy*=.95; }
+          else if (seekWater && pondDistance <= pondRadius * .88 && s.waterLevel > 1) {
+            c.drinking = true; c.water = Math.min(100, c.water + 2.5 * dt); s.waterLevel = Math.max(18, s.waterLevel - .001 * dt); c.vx *= .72; c.vy *= .72;
           } else {
             if (seekWater) { const d = pondDistance || 1; c.vx += (pondX-c.x)/d*.19*dt; c.vy += (pondY-c.y)/d*.19*dt; }
             else if (seekFood && (closest >= 0 || fruitBush >= 0)) { const target=closest>=0?s.food[closest]:fruitPosition(s.bushes[fruitBush],fruitSlot); const d = Math.sqrt(best) || 1; c.vx += (target.x-c.x)/d*.19*dt; c.vy += (target.y-c.y)/d*.19*dt; }
@@ -151,22 +156,23 @@ export default function Home() {
           c.x += c.vx*dt; c.y += c.vy*dt;
           if (c.x < c.size || c.x > s.width-c.size) { c.vx *= -1; c.x = clamp(c.x,c.size,s.width-c.size); }
           if (c.y < c.size || c.y > s.height-c.size) { c.vy *= -1; c.y = clamp(c.y,c.size,s.height-c.size); }
-          if (c.hunger < 96) for (let j = s.food.length-1; j >= 0; j--) { const f = s.food[j]; if ((f.x-c.x)**2+(f.y-c.y)**2 < (c.size+3)**2) { c.energy += f.energy; c.hunger=Math.min(100,c.hunger+f.energy*2.2);c.eating=true;s.food.splice(j,1); break; } }
-          if (c.hunger < 96 && fruitBush >= 0 && fruitSlot < Math.floor(s.bushes[fruitBush].fruit)) { const bush=s.bushes[fruitBush],fruit=fruitPosition(bush,fruitSlot);if((fruit.x-c.x)**2+(fruit.y-c.y)**2<(c.size+5)**2){bush.fruit=Math.max(0,bush.fruit-1);c.energy+=25;c.hunger=Math.min(100,c.hunger+52);c.eating=true;} }
-          if (c.energy > 155 && c.hunger > 64 && c.water > 55 && s.creatures.length + newborns.length < 130) {
-            c.energy *= .54; const child = seedCreature(s.width,s.height,c.generation+1,c); child.x=c.x; child.y=c.y; child.energy=c.energy; child.hunger=75; child.water=76;
+          if (c.hunger < 94) for (let j = s.food.length-1; j >= 0; j--) { const f = s.food[j]; if ((f.x-c.x)**2+(f.y-c.y)**2 < (c.size+3)**2) { c.energy += f.energy; c.hunger=Math.min(100,c.hunger+f.energy*2.4);c.eating=true;c.resting=false;s.food.splice(j,1); break; } }
+          if (c.hunger < 94 && fruitBush >= 0 && fruitSlot < Math.floor(s.bushes[fruitBush].fruit)) { const bush=s.bushes[fruitBush],fruit=fruitPosition(bush,fruitSlot);if((fruit.x-c.x)**2+(fruit.y-c.y)**2<(c.size+5)**2){bush.fruit=Math.max(0,bush.fruit-1);c.energy+=29;c.hunger=Math.min(100,c.hunger+58);c.eating=true;c.resting=false;} }
+          if (c.energy > 148 && c.hunger > 62 && c.water > 55 && s.creatures.length + newborns.length < 130) {
+            c.energy *= .56; const child = seedCreature(s.width,s.height,c.generation+1,c); child.x=c.x; child.y=c.y; child.energy=Math.max(72,c.energy); child.hunger=82; child.water=82;
             const m = mutationRef.current / 18; child.speed=clamp(c.speed+rand(-.16,.16)*m,.45,2.7); child.size=clamp(c.size+rand(-.5,.5)*m,3.2,9.5); child.sense=clamp(c.sense+rand(-8,8)*m,34,150); child.efficiency=clamp(c.efficiency+rand(-.025,.025)*m,.65,1.22); newborns.push(child);
           }
         }
-        s.creatures = s.creatures.filter(c => c.energy > 0 && c.age < 5200).concat(newborns);
+        s.creatures = s.creatures.filter(c => c.energy > 0 && c.age < 14000).concat(newborns);
         if (s.creatures.length === 0) s.creatures.push(...Array.from({length:12},()=>seedCreature(s.width,s.height,s.year)));
         if (Math.floor(s.time) % 40 < dt) {
           const avg = (k: keyof Genome) => s.creatures.reduce((a,c)=>a+(c[k] as number),0)/s.creatures.length;
           const hydration = s.creatures.reduce((a,c)=>a+c.water,0)/s.creatures.length;
           const hunger = s.creatures.reduce((a,c)=>a+c.hunger,0)/s.creatures.length;
+          const resting = s.creatures.filter(c=>c.resting).length;
           const foodCount = s.food.length+s.bushes.reduce((sum,bush)=>sum+Math.floor(bush.fruit),0);
           s.history.push({ population:s.creatures.length, food:foodCount, water:s.waterLevel, speed:avg("speed") }); if (s.history.length > 110) s.history.shift();
-          setStats({population:s.creatures.length, food:foodCount, hunger, water:s.waterLevel, hydration, generation:Math.max(...s.creatures.map(c=>c.generation)), avgSpeed:avg("speed"), avgSize:avg("size"), year:s.year, season:s.season, event:s.event});
+          setStats({population:s.creatures.length, food:foodCount, hunger, water:s.waterLevel, hydration, resting, generation:Math.max(...s.creatures.map(c=>c.generation)), avgSpeed:avg("speed"), avgSize:avg("size"), year:s.year, season:s.season, event:s.event});
         }
       }
 
@@ -189,6 +195,7 @@ export default function Home() {
         ctx.fillStyle="rgba(245,250,226,.78)";ctx.beginPath();ctx.arc(c.size*.55,-c.size*.34,1.3,0,TAU);ctx.fill();ctx.restore();
         const barWidth=Math.max(13,c.size*2.8),barY=c.y-c.size-9;ctx.fillStyle="rgba(25,48,42,.3)";ctx.fillRect(c.x-barWidth/2,barY,barWidth,2.5);ctx.fillRect(c.x-barWidth/2,barY+3.5,barWidth,2.5);ctx.fillStyle=c.hunger<25?"#d46f4d":"#d8a03a";ctx.fillRect(c.x-barWidth/2,barY,barWidth*c.hunger/100,2.5);ctx.fillStyle=c.water<25?"#d46f4d":"#70c7dc";ctx.fillRect(c.x-barWidth/2,barY+3.5,barWidth*c.water/100,2.5);
         if(c.eating){ctx.fillStyle="#f2c45b";ctx.beginPath();ctx.arc(c.x+barWidth/2+3,barY+1.2,2.2,0,TAU);ctx.fill();}else if(c.drinking){ctx.fillStyle="rgba(225,250,255,.9)";ctx.beginPath();ctx.arc(c.x+barWidth/2+3,barY+4.8,2.2,0,TAU);ctx.fill();}
+        if(c.resting){ctx.fillStyle="rgba(31,49,41,.55)";ctx.font="italic 8px Georgia";ctx.fillText("z",c.x+barWidth/2+2,barY-2);}
       }
       drawChart(); frame.current=requestAnimationFrame(tick);
     };
@@ -203,16 +210,16 @@ export default function Home() {
 
   return <main>
     <header className="topbar"><a className="brand" href="#top" aria-label="Evolv home"><span className="brand-mark">e</span><span>EVOLV</span></a><div className="era"><span>YEAR {stats.year}</span><b>{stats.season.toUpperCase()}</b></div><div className="actions"><button className="ghost" onClick={reset}>↻ <span>Reset</span></button><button className="primary" onClick={()=>setPaused(v=>!v)}>{paused?"▶ Resume":"Ⅱ Pause"}</button></div></header>
-    <section className="hero" id="top"><div><p className="eyebrow">NATURAL SELECTION, IN MOTION</p><h1>Life finds a way.<br/><em>Watch it happen.</em></h1></div><p className="intro">A living ecosystem where organisms balance hunger and thirst, fruit ripens with the seasons, and only the best-adapted survive.</p></section>
+    <section className="hero" id="top"><div><p className="eyebrow">NATURAL SELECTION, IN MOTION</p><h1>Life finds a way.<br/><em>Watch it happen.</em></h1></div><p className="intro">A living ecosystem where gooblets forage, drink, rest, reproduce, and adapt across changing seasons.</p></section>
     <section className="lab">
       <div className="habitat-wrap"><div className="habitat-head"><div><span className="live"><i/> LIVE HABITAT</span><span className="event">{stats.event}</span></div><span>Tap to scatter fruit</span></div><canvas ref={worldRef} onPointerDown={addFood} className="world" aria-label="Live evolution simulation with fruit bushes and a pond. Tap to scatter fruit."/><div className="habitat-foot"><span><i className="dot creature"/> Organisms</span><span><i className="dot nutrient"/> Fruit</span><span><i className="dot bush"/> Bushes</span><span><i className="dot water"/> Pond</span><span className="hint">Gold: hunger · Blue: hydration</span></div></div>
       <aside>
-        <div className="panel stats-panel"><div className="panel-title"><span>FIELD NOTES</span><small>LIVE SAMPLE</small></div><div className="stat-grid"><Stat label="Population" value={String(stats.population)} note="living organisms" color="#28785d"/><Stat label="Generation" value={String(stats.generation)} note="highest lineage" color="#667b43"/><Stat label="Hunger" value={`${Math.round(stats.hunger)}%`} note="population average" color="#d59a2f"/><Stat label="Hydration" value={`${Math.round(stats.hydration)}%`} note="population average" color="#55a9bd"/><Stat label="Fruit" value={String(stats.food)} note="ripe and scattered" color="#d67237"/><Stat label="Pond" value={`${Math.round(stats.water)}%`} note="water remaining" color="#3b8fa5"/><Stat label="Avg. speed" value={stats.avgSpeed.toFixed(2)} note="movement trait" color="#c08726"/><Stat label="Avg. size" value={stats.avgSize.toFixed(1)} note="body radius" color="#9b6545"/></div></div>
+        <div className="panel stats-panel"><div className="panel-title"><span>FIELD NOTES</span><small>LIVE SAMPLE</small></div><div className="stat-grid"><Stat label="Population" value={String(stats.population)} note="living gooblets" color="#28785d"/><Stat label="Generation" value={String(stats.generation)} note="highest lineage" color="#667b43"/><Stat label="Hunger" value={`${Math.round(stats.hunger)}%`} note="population average" color="#d59a2f"/><Stat label="Hydration" value={`${Math.round(stats.hydration)}%`} note="population average" color="#55a9bd"/><Stat label="Fruit" value={String(stats.food)} note="ripe and scattered" color="#d67237"/><Stat label="Pond" value={`${Math.round(stats.water)}%`} note="water remaining" color="#3b8fa5"/><Stat label="Avg. speed" value={stats.avgSpeed.toFixed(2)} note="movement trait" color="#c08726"/><Stat label="Chilling" value={String(stats.resting)} note="gooblets resting" color="#74856f"/></div></div>
         <div className="panel controls"><div className="panel-title"><span>EXPERIMENT</span><small>CONTROLS</small></div><label><span>Time flow <b>{speed}×</b></span><input type="range" min="0.5" max="4" step="0.5" value={speed} onChange={e=>setSpeed(Number(e.target.value))}/></label><label><span>Mutation rate <b>{mutation}%</b></span><input type="range" min="2" max="42" step="2" value={mutation} onChange={e=>setMutation(Number(e.target.value))}/></label><p>Higher mutation creates more variation, but useful traits are never guaranteed.</p></div>
         <div className="panel chart-panel"><div className="chart-head"><span>ECOSYSTEM PULSE</span><span><i className="dot creature"/> Population <i className="dot nutrient"/> Food <i className="dot water"/> Water</span></div><canvas ref={chartRef} className="chart" aria-label="Population, food, and pond water history chart"/></div>
       </aside>
     </section>
-    <section className="principles"><div><p className="eyebrow">WHAT TO WATCH</p><h2>Evolution has no finish line.</h2></div><div className="principle-grid"><article><b>01</b><h3>Variation</h3><p>Every birth introduces small changes in speed, size, senses, and efficiency.</p></article><article><b>02</b><h3>Selection</h3><p>Seasonal fruit, hunger, thirst, and a changing pond determine which traits pay off.</p></article><article><b>03</b><h3>Inheritance</h3><p>Well-fed survivors reproduce, passing successful traits into the next generation.</p></article></div></section>
+    <section className="principles"><div><p className="eyebrow">WHAT TO WATCH</p><h2>Evolution has no finish line.</h2></div><div className="principle-grid"><article><b>01</b><h3>Variation</h3><p>Every birth introduces small changes in speed, size, senses, and efficiency.</p></article><article><b>02</b><h3>Balance</h3><p>Gooblets forage when hungry, drink when thirsty, and conserve energy when comfortable.</p></article><article><b>03</b><h3>Inheritance</h3><p>Healthy survivors reproduce, passing successful traits into the next generation.</p></article></div></section>
     <footer><span>EVOLV / DIGITAL FIELD LAB</span><span>Built for curious minds</span></footer>
   </main>;
 }
